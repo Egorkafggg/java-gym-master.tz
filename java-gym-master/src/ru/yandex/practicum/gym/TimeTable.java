@@ -1,51 +1,75 @@
 package ru.yandex.practicum.gym;
 
 import java.util.*;
-import java.util.stream.Collectors;
+
 
 public class TimeTable {
 
-    private Map<DayOfWeek, List<TrainingSession>> timetable = new HashMap<>(); // ключ - день недели, значение - список занятий на этот день.
+    private final Map<DayOfWeek, TreeMap<TimeOfDay, List<TrainingSession>>> timetable;
+
+    public TimeTable() {
+        this.timetable = new HashMap<>();
+        for (DayOfWeek d : DayOfWeek.values()) {
+            timetable.put(d, new TreeMap<>());
+        }
+    }
+
+    //Добавляет занятие в расписание.
 
     public void addNewTrainingSession(TrainingSession trainingSession) {
+        Objects.requireNonNull(trainingSession, "trainingSession == null");
         DayOfWeek day = trainingSession.getDayOfWeek();
-        if (!timetable.containsKey(day)) {
-            timetable.put(day, new ArrayList<>());
-        }
-        List<TrainingSession> sessions = timetable.get(day);
-        sessions.add(trainingSession);
-        sessions.sort(Comparator.comparing(TrainingSession::getTimeOfDay));
+        TimeOfDay time = trainingSession.getTimeOfDay();
+
+        TreeMap<TimeOfDay, List<TrainingSession>> dayMap = timetable.get(day);
+        List<TrainingSession> list = dayMap.computeIfAbsent(time, t -> new ArrayList<>());
+        list.add(trainingSession);
     }
 
-    public List<TrainingSession> getTrainingSessionsForDay(DayOfWeek dayOfWeek) {  // возвращаем список занятий на указанный день недели
-        return timetable.getOrDefault(dayOfWeek, new ArrayList<>());
+    //Возвращает все занятия в указанный день, упорядоченные по времени начала.
+
+    public List<TrainingSession> getTrainingSessionsForDay(DayOfWeek dayOfWeek) {
+        Objects.requireNonNull(dayOfWeek, "dayOfWeek == null");
+        TreeMap<TimeOfDay, List<TrainingSession>> dayMap = timetable.get(dayOfWeek);
+        if (dayMap == null || dayMap.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<TrainingSession> result = new ArrayList<>();
+        for (List<TrainingSession> sessionsAtTime : dayMap.values()) {
+            result.addAll(sessionsAtTime);
+        }
+        return Collections.unmodifiableList(result);
     }
+
+    //Возвращает список занятий, начинающихся в указанное время в указанном дне.
 
     public List<TrainingSession> getTrainingSessionsForDayAndTime(DayOfWeek dayOfWeek, TimeOfDay timeOfDay) {
-        List<TrainingSession> sessionsForDay = getTrainingSessionsForDay(dayOfWeek);
-        List<TrainingSession> result = new ArrayList<>();
-        for (TrainingSession session : sessionsForDay) {
-            if (session.getTimeOfDay().equals(timeOfDay)) {
-                result.add(session);
-            }
-        }
-        return result;
+        Objects.requireNonNull(dayOfWeek, "dayOfWeek == null");
+        Objects.requireNonNull(timeOfDay, "timeOfDay == null");
+        TreeMap<TimeOfDay, List<TrainingSession>> dayMap = timetable.get(dayOfWeek);
+        if (dayMap == null) return Collections.emptyList();
+        List<TrainingSession> list = dayMap.get(timeOfDay);
+        if (list == null || list.isEmpty()) return Collections.emptyList();
+        return Collections.unmodifiableList(new ArrayList<>(list));
     }
 
-    public Map<Coach, Integer> getCountByCoaches() {
-        Map<Coach, Integer> countByCoaches = new HashMap<>();
-        for (List<TrainingSession> sessions : timetable.values()) {
-            for (TrainingSession session : sessions) {
-                Coach coach = session.getCoach();
-                countByCoaches.put(coach, countByCoaches.getOrDefault(coach, 0) + 1);
+    //Подсчитывает количество занятий в неделю для каждого тренера и возвращает список CounterOfTrainings,
+    //отсортированный по убыванию количества занятий.
+
+    public List<CounterOfTrainings> getCountByCoaches() {
+        Map<Coach, Integer> counters = new HashMap<>();
+        for (TreeMap<TimeOfDay, List<TrainingSession>> dayMap : timetable.values()) {
+            for (List<TrainingSession> sessions : dayMap.values()) {
+                for (TrainingSession ts : sessions) {
+                    counters.merge(ts.getCoach(), 1, Integer::sum);
+                }
             }
         }
-        return countByCoaches.entrySet()
-                .stream()
-                .sorted(Map.Entry.<Coach, Integer>comparingByValue().reversed())
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        Map.Entry::getValue,
-                        (oldValue, newValue) -> oldValue, LinkedHashMap::new));
+        List<CounterOfTrainings> result = new ArrayList<>();
+        for (Map.Entry<Coach, Integer> e : counters.entrySet()) {
+            result.add(new CounterOfTrainings(e.getKey(), e.getValue()));
+        }
+        Collections.sort(result);
+        return Collections.unmodifiableList(result);
     }
 }
